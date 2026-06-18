@@ -153,6 +153,32 @@ Respond with ONLY 'ja' or 'en'. Nothing else."""
         print(f"[Language Detection] Unicode fallback result: '{fallback_result}'")
         return fallback_result
 
+# Rimo-wide terminology rules applied when translating INTO Japanese.
+# Rimo's "Note" resource (a meeting recording/record) must always be rendered
+# as「ノート」, never「メモ」 — this is a product-wide naming rule.
+JAPANESE_GLOSSARY_INSTRUCTION = (
+    "Rimo product glossary (apply when translating into Japanese): when the text "
+    "refers to Rimo's \"Note\" resource (a meeting recording/record), translate it "
+    "as「ノート」, never「メモ」. Apply this to UI labels, command descriptions, and "
+    "prose alike."
+)
+
+
+def _is_japanese_target(target_language):
+    """Return True if the target language is Japanese (accepts 'ja', 'Japanese', etc.)."""
+    if not target_language:
+        return False
+    lang = target_language.strip().lower()
+    return lang.startswith("ja") or "japanese" in lang
+
+
+def _glossary_for(target_language):
+    """Return the glossary instruction for the target language, or '' if none applies."""
+    if _is_japanese_target(target_language):
+        return JAPANESE_GLOSSARY_INSTRUCTION
+    return ""
+
+
 def translate_text(text, target_language):
     try:
         url = "https://api.openai.com/v1/chat/completions"
@@ -167,6 +193,10 @@ def translate_text(text, target_language):
             "Preserve all markdown, HTML, code blocks, links, and whitespace exactly as they appear.\n"
             "Output only the translated text. Do not add explanations, preambles, notes, or any commentary."
         )
+
+        glossary = _glossary_for(target_language)
+        if glossary:
+            system_prompt += "\n" + glossary
 
         payload = {
             "model": "gpt-4o-mini",
@@ -247,10 +277,15 @@ Updated translation:"""
     try:
         url = "https://api.openai.com/v1/chat/completions"
         
+        system_content = f"You are a precise translator. Return ONLY the translated content without any explanations or comments. Translate only the changed portions to {target_lang}."
+        glossary = _glossary_for(target_lang)
+        if glossary:
+            system_content += " " + glossary
+
         payload = {
             "model": "gpt-4",
             "messages": [
-                {"role": "system", "content": f"You are a precise translator. Return ONLY the translated content without any explanations or comments. Translate only the changed portions to {target_lang}."},
+                {"role": "system", "content": system_content},
                 {"role": "user", "content": prompt}
             ],
             "temperature": 0.1
