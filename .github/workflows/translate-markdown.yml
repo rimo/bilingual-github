@@ -75,7 +75,7 @@ jobs:
       - name: Checkout Translation Tools Repository
         uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
         with:
-          repository: rimoapp/bilingual-github
+          repository: rimo/bilingual-github
           path: bilingual-github
           token: ${{ steps.generate_token.outputs.token }}
           persist-credentials: false
