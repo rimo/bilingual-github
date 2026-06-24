@@ -35,7 +35,7 @@ on:
 
 jobs:
   call-translate-issues:
-    uses: rimoapp/bilingual-github/.github/workflows/translate-issues.yml@main
+    uses: rimo/bilingual-github/.github/workflows/translate-issues.yml@main
     secrets:
       OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
     with:
@@ -58,7 +58,7 @@ on:
 
 jobs:
   call-translate-comments:
-    uses: rimoapp/bilingual-github/.github/workflows/translate-comments.yml@main
+    uses: rimo/bilingual-github/.github/workflows/translate-comments.yml@main
     secrets:
       OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
     with:
