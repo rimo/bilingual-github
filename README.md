@@ -38,7 +38,7 @@ jobs:
     if: |
       github.event.label.name == 'need translation' ||
       (github.event.action == 'edited' && contains(github.event.issue.labels.*.name, 'need translation'))
-    uses: rimoapp/bilingual-github/.github/workflows/translate-issues.yml@main
+    uses: rimo/bilingual-github/.github/workflows/translate-issues.yml@main
     secrets:
       OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
     with:
@@ -67,7 +67,7 @@ jobs:
     if: |
       (github.event_name == 'issues' && github.event.label.name == 'need translation') ||
       github.event_name == 'issue_comment'
-    uses: rimoapp/bilingual-github/.github/workflows/translate-comments.yml@main
+    uses: rimo/bilingual-github/.github/workflows/translate-comments.yml@main
     secrets:
       OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
     with:
@@ -187,7 +187,7 @@ jobs:
   trigger-markdown-translation:
     needs: check-markdown-changes
     if: needs.check-markdown-changes.outputs.has_changes == 'true' && needs.check-markdown-changes.outputs.skip_translation == 'false'
-    uses: rimoapp/bilingual-github/.github/workflows/translate-markdown.yml@main
+    uses: rimo/bilingual-github/.github/workflows/translate-markdown.yml@main
     secrets:
       OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
       RIMO_GITHUB_APP_ID: ${{ secrets.RIMO_GITHUB_APP_ID }}
