@@ -179,8 +179,10 @@ def main():
         
         if COMMENT_ID:
             comment_id = int(COMMENT_ID)
-            # Check if it's a review comment or an issue comment
-            if EVENT_NAME == 'pull_request_review_comment':
+            # Check if it's a review, a review comment or an issue comment
+            if EVENT_NAME == 'pull_request_review':
+                comment = pr.get_review(comment_id)
+            elif EVENT_NAME == 'pull_request_review_comment':
                 comment = pr.get_review_comment(comment_id)
             else:
                 comment = pr.get_issue_comment(comment_id)
@@ -211,6 +213,12 @@ def main():
             if translate_pr_comment(comment):
                 comments_translated = True
 
+        # Translate the summary body of each review on the PR
+        reviews = pr.get_reviews()
+        for review in reviews:
+            if translate_pr_comment(review):
+                comments_translated = True
+
         if pr_translated or comments_translated:
             labels = [label.name.lower() for label in pr.labels]
             if TRANSLATED_LABEL.lower() not in labels:
@@ -221,7 +229,7 @@ def main():
         return
     except Exception as e:
         print(f"Error: {e}")
-        return
+        sys.exit(1)
 
 if __name__ == "__main__":
     main() 
