@@ -7,8 +7,10 @@ on:
         required: true
       RIMO_GITHUB_APP_ID:
         required: false
+        description: 'Deprecated: used only when output_mode is commit. Will be removed after callers migrate to output_mode: artifact.'
       RIMO_GITHUB_APP_PRIVATE_KEY:
         required: false
+        description: 'Deprecated: used only when output_mode is commit. Will be removed after callers migrate to output_mode: artifact.'
     inputs:
       is_initial_setup:
         required: false
@@ -40,18 +42,40 @@ on:
         type: string
         default: ''
         description: 'Target branch for PR commits'
+      output_mode:
+        required: false
+        type: string
+        default: 'commit'
+        description: >-
+          commit: commit and push translations from this workflow (deprecated).
+          artifact: upload translations as the "translations" artifact for the caller to commit and push (recommended).
+    outputs:
+      has_changes:
+        description: 'true when translations produced changes (set in artifact mode)'
+        value: ${{ jobs.translate-markdown.outputs.has_changes }}
 
-permissions:
-  contents: write
-  pull-requests: write
+# No workflow-level permissions: the job inherits the caller's GITHUB_TOKEN permissions,
+# so artifact-mode callers can grant contents: read only.
 
 jobs:
   translate-markdown:
     runs-on: blacksmith-2vcpu-ubuntu-2404
+    outputs:
+      has_changes: ${{ steps.collect.outputs.has_changes }}
 
     steps:
+      - name: Validate output_mode
+        env:
+          OUTPUT_MODE: ${{ inputs.output_mode }}
+        run: |
+          if [[ "$OUTPUT_MODE" != "commit" && "$OUTPUT_MODE" != "artifact" ]]; then
+            echo "::error::output_mode must be 'commit' or 'artifact' (got '$OUTPUT_MODE')"
+            exit 1
+          fi
+
       - name: Check if Rimo GitHub App credentials exist
         id: check_app_creds
+        if: inputs.output_mode == 'commit'
         env:
           RIMO_APP_ID: ${{ secrets.RIMO_GITHUB_APP_ID }}
           RIMO_PRIVATE_KEY: ${{ secrets.RIMO_GITHUB_APP_PRIVATE_KEY }}
@@ -66,7 +90,7 @@ jobs:
 
       - name: Generate GitHub App Token (for commits only)
         id: generate_token
-        if: steps.check_app_creds.outputs.has_app_creds == 'true'
+        if: inputs.output_mode == 'commit' && steps.check_app_creds.outputs.has_app_creds == 'true'
         uses: tibdex/github-app-token@3beb63f4bd073e61482598c45c71c1019b59b73a # v2.1.0
         with:
           app_id: ${{ secrets.RIMO_GITHUB_APP_ID }}
@@ -77,7 +101,7 @@ jobs:
         with:
           repository: rimo/bilingual-github
           path: bilingual-github
-          token: ${{ steps.generate_token.outputs.token }}
+          token: ${{ steps.generate_token.outputs.token || github.token }}
           persist-credentials: false
       - name: Checkout Target Repository
         uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
@@ -99,6 +123,7 @@ jobs:
           pip install -r requirements.txt
 
       - name: Configure Git User
+        if: inputs.output_mode == 'commit'
         working-directory: target-repo
         run: |
           if [ -n "${{ steps.generate_token.outputs.token }}" ]; then
@@ -138,7 +163,41 @@ jobs:
             OPENAI_API_KEY="${OPENAI_API_KEY}" python ../bilingual-github/src/hooks/post_commit.py
           fi
 
+      # Artifact layout: files/<repo-relative path> for added/modified files, and
+      # deleted-files listing paths to remove (NUL-separated, so non-ASCII paths stay unquoted).
+      - name: Collect Translation Changes
+        id: collect
+        if: inputs.output_mode == 'artifact'
+        working-directory: target-repo
+        env:
+          OUT_DIR: ${{ runner.temp }}/translations
+        run: |
+          mkdir -p "$OUT_DIR/files"
+          git add -A
+          git diff --cached --name-only --no-renames --diff-filter=d -z \
+            | xargs -0 -r cp --parents -t "$OUT_DIR/files" --
+          git diff --cached --name-only --no-renames --diff-filter=D -z > "$OUT_DIR/deleted-files"
+
+          if git diff --cached --quiet; then
+            echo "has_changes=false" >> $GITHUB_OUTPUT
+            echo "No translation changes"
+          else
+            echo "has_changes=true" >> $GITHUB_OUTPUT
+            git diff --cached --name-status --no-renames
+          fi
+
+      - name: Upload Translations Artifact
+        if: inputs.output_mode == 'artifact' && steps.collect.outputs.has_changes == 'true'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: translations
+          path: ${{ runner.temp }}/translations
+          include-hidden-files: true
+          overwrite: true
+          if-no-files-found: error
+
       - name: Commit and Push Translations
+        if: inputs.output_mode == 'commit'
         working-directory: target-repo
         env:
           GH_TOKEN: ${{ steps.generate_token.outputs.token }}

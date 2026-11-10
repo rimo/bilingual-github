@@ -75,6 +75,24 @@ jobs:
       comment_id: ${{ github.event.comment.id || '' }}
 ```
 #### 3. Translate .md files
+The recommended setup calls the reusable workflow with `output_mode: artifact` and **without** any GitHub App secrets.
+The reusable workflow only reads the repository and uploads the translated files as an artifact named `translations`;
+a `push-translations` job in your own workflow then commits and pushes them with a token scoped to your repository.
+
+- The reusable workflow runs with `contents: read` and never receives push credentials.
+- `push-translations` mints a GitHub App installation token limited to the current repository
+  (`repositories: ${{ github.event.repository.name }}`, `permission-contents: write`) with
+  `actions/create-github-app-token`.
+- Pushes made with an App token trigger the PR's CI on the translation commit. Pushes made with `GITHUB_TOKEN` do not.
+- The commit author must stay `rimo-translation-bot[bot]`: the translator uses it to tell bot-written translations from
+  human edits when both language files change in one PR.
+- Do not use `secrets: inherit` for the translation job; pass only `OPENAI_API_KEY`.
+
+The `translations` artifact contains:
+- `files/<repo-relative path>`: added or modified files.
+- `deleted-files`: NUL-separated list of repo-relative paths to delete (e.g. translations of deleted sources,
+  or `foo.md` renamed to `foo.en.md`).
+
 ```base
 .github/workflows/translate-markdown.yml
 ```
@@ -93,9 +111,8 @@ concurrency:
   cancel-in-progress: true
 
 permissions:
-  contents: write
-  pull-requests: write
-  
+  contents: read
+
 jobs:
   debug-info:
     runs-on: ubuntu-latest
@@ -188,18 +205,80 @@ jobs:
     needs: check-markdown-changes
     if: needs.check-markdown-changes.outputs.has_changes == 'true' && needs.check-markdown-changes.outputs.skip_translation == 'false'
     uses: rimo/bilingual-github/.github/workflows/translate-markdown.yml@main
+    permissions:
+      contents: read
     secrets:
       OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-      RIMO_GITHUB_APP_ID: ${{ secrets.RIMO_GITHUB_APP_ID }}
-      RIMO_GITHUB_APP_PRIVATE_KEY: ${{ secrets.RIMO_GITHUB_APP_PRIVATE_KEY }}
     with:
       is_initial_setup: ${{ needs.check-markdown-changes.outputs.is_initial_setup == 'true' }}
       changed_files: ${{ needs.check-markdown-changes.outputs.changed_files }}
       deleted_files: ${{ needs.check-markdown-changes.outputs.deleted_files }}
       is_pr: ${{ needs.check-markdown-changes.outputs.is_pr == 'true' }}
       pr_number: ${{ needs.check-markdown-changes.outputs.pr_number }}
-      target_branch: ${{ needs.check-markdown-changes.outputs.target_branch }}  
+      target_branch: ${{ needs.check-markdown-changes.outputs.target_branch }}
+      output_mode: artifact
+
+  push-translations:
+    needs: [check-markdown-changes, trigger-markdown-translation]
+    if: >-
+      needs.trigger-markdown-translation.outputs.has_changes == 'true' &&
+      github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Generate repo-scoped GitHub App token
+        id: app-token
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        with:
+          app-id: ${{ secrets.RIMO_GITHUB_APP_ID }}
+          private-key: ${{ secrets.RIMO_GITHUB_APP_PRIVATE_KEY }}
+          repositories: ${{ github.event.repository.name }}
+          permission-contents: write
+
+      - name: Checkout PR branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.check-markdown-changes.outputs.target_branch }}
+          token: ${{ steps.app-token.outputs.token }}
+
+      - name: Download translations
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: translations
+          path: ${{ runner.temp }}/translations
+
+      - name: Apply, commit and push translations
+        env:
+          TRANSLATIONS: ${{ runner.temp }}/translations
+          TARGET_BRANCH: ${{ needs.check-markdown-changes.outputs.target_branch }}
+        run: |
+          set -euo pipefail
+          # Apply only regular .md files so the artifact cannot touch anything else in the repository.
+          (cd "$TRANSLATIONS/files" && find . -type f -name '*.md' -print0) |
+            while IFS= read -r -d '' f; do
+              mkdir -p "$(dirname "$f")"
+              cp "$TRANSLATIONS/files/$f" "$f"
+            done
+          while IFS= read -r -d '' f; do
+            case "$f" in *.md) git rm -q --ignore-unmatch -- "$f" ;; esac
+          done < "$TRANSLATIONS/deleted-files"
+
+          git config user.name "rimo-translation-bot[bot]"
+          git config user.email "rimo-translation-bot[bot]@users.noreply.github.com"
+          git add -A -- '*.md'
+          if git diff --cached --quiet; then
+            echo "No changes to commit"
+            exit 0
+          fi
+          git commit -m "Update markdown translations"
+          git pull --rebase origin "$TARGET_BRANCH"
+          git push origin "HEAD:$TARGET_BRANCH"
 ```
+
+> `output_mode: commit` (the default) and the `RIMO_GITHUB_APP_ID` / `RIMO_GITHUB_APP_PRIVATE_KEY` secrets of the
+> reusable workflow are deprecated and will be removed after all callers migrate to `output_mode: artifact`.
+> Callers still using `commit` must grant `contents: write` to the calling job.
 
 ## Steps to Configure the Target Repository
 
@@ -208,6 +287,8 @@ jobs:
 - Under **Security > Secrets and variables > Actions**, add the following
   secret:
   - **OPENAI_API_KEY:** Your OpenAI API key for translations.
+  - **RIMO_GITHUB_APP_ID / RIMO_GITHUB_APP_PRIVATE_KEY** (only for .md translation): used by your own
+    `push-translations` job. Do not pass them to the reusable workflow.
 
 #### 2. Enable the Workflows
 Ensure that GitHub Actions are enabled for the repository. The workflows will trigger on the following events:
