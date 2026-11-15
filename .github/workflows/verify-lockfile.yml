@@ -35,9 +35,15 @@ jobs:
     env:
       GH_TOKEN: ${{ github.token }}
     steps:
-      - uses: actions/checkout@v7.0.1
-        with:
-          persist-credentials: false
+      # actions/checkout は使わず git で取得する。この repo の Actions の設定は rimo が所有する
+      # repository の action しか許可しておらず、actions/checkout を使うと job が始まる前に
+      # startup_failure になるため(rimo/bilingual-github#67)。public repo なので token は渡さない。
+      - name: Checkout
+        run: |
+          git init -q .
+          git remote add origin "${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}.git"
+          git fetch -q --depth=1 origin "${GITHUB_SHA}"
+          git checkout -q FETCH_HEAD
 
       - name: Install gh-actions-lock
         run: gh extension install github/gh-actions-lock --pin "${GH_ACTIONS_LOCK_VERSION}"
