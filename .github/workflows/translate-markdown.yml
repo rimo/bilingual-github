@@ -78,13 +78,13 @@ jobs:
 
       # rimo/bilingual-github は public なので、GitHub App の token を使わず既定の github.token で取得する。
       - name: Checkout Translation Tools Repository
-        uses: actions/checkout@v6.0.1
+        uses: actions/checkout@v7.0.1
         with:
           repository: rimo/bilingual-github
           path: bilingual-github
           persist-credentials: false
       - name: Checkout Target Repository
-        uses: actions/checkout@v6.0.1
+        uses: actions/checkout@v7.0.1
         with:
           path: target-repo
           fetch-depth: 0
@@ -92,7 +92,7 @@ jobs:
           persist-credentials: false
 
       - name: Set Up Python
-        uses: actions/setup-python@v6.1.0
+        uses: actions/setup-python@v7.1.0
         with:
           python-version: '3.8'
 

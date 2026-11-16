@@ -31,14 +31,14 @@ jobs:
     
     steps:
       - name: Checkout Repository
-        uses: actions/checkout@v6.0.1
+        uses: actions/checkout@v7.0.1
         with:
           repository: rimo/bilingual-github
           path: bilingual-github
           token: ${{ secrets.REPO_TOKEN }}
       
       - name: Set Up Python
-        uses: actions/setup-python@v6.1.0
+        uses: actions/setup-python@v7.1.0
         with:
           python-version: "3.8"
       
