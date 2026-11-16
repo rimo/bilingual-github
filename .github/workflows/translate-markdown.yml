@@ -64,20 +64,24 @@ jobs:
             echo "Rimo GitHub App credentials not found, will use GITHUB_TOKEN"
           fi
 
+      # 翻訳の commit を呼び出し元の repository に push するための token。
+      # owner と repositories を指定しないので、token の対象は実行中の repository(= 呼び出し元)だけになる。
+      # 権限も contents:write だけに絞る(指定しないと GitHub App の全権限を引き継ぐ)。
       - name: Generate GitHub App Token (for commits only)
         id: generate_token
         if: steps.check_app_creds.outputs.has_app_creds == 'true'
-        uses: tibdex/github-app-token@v2.1.0
+        uses: actions/create-github-app-token@v3.3.0
         with:
-          app_id: ${{ secrets.RIMO_GITHUB_APP_ID }}
-          private_key: ${{ secrets.RIMO_GITHUB_APP_PRIVATE_KEY }}
+          app-id: ${{ secrets.RIMO_GITHUB_APP_ID }}
+          private-key: ${{ secrets.RIMO_GITHUB_APP_PRIVATE_KEY }}
+          permission-contents: write
 
+      # rimo/bilingual-github は public なので、GitHub App の token を使わず既定の github.token で取得する。
       - name: Checkout Translation Tools Repository
         uses: actions/checkout@v6.0.1
         with:
           repository: rimo/bilingual-github
           path: bilingual-github
-          token: ${{ steps.generate_token.outputs.token }}
           persist-credentials: false
       - name: Checkout Target Repository
         uses: actions/checkout@v6.0.1
